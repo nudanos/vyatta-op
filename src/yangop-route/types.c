@@ -47,10 +47,8 @@ static json_t *address_json(int family, const void *addr, unsigned int prefixlen
 
 	inet_ntop(family, addr, ip, sizeof(ip));
 	if (prefixlen && host_len != prefixlen) {
-		char buf[4];
-		snprintf(buf, sizeof(buf), "/%u", prefixlen);
-		strncat(ip, buf, sizeof(buf) - 1);
-		ip[sizeof(ip) - 1] = '\0';
+		size_t n = strlen(ip);
+		snprintf(ip + n, sizeof(ip) - n, "/%u", prefixlen);
 	}
 	return json_string(ip);
 }
