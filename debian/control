@@ -1,25 +1,26 @@
 Source: vyatta-op
-Section: contrib/net
-Priority: extra
-Maintainer: Vyatta Package Maintainers <DL-vyatta-help@att.com>
-Build-Depends:
+Section: net
+Priority: optional
+Maintainer: NuDanOS Maintainers <jon@fernandez.tech>
+Build-Depends: debhelper-compat (= 13),
  autoconf,
  automake,
- autotools-dev,
  config-package-dev (>= 5.0),
  cpio,
- debhelper (>= 9),
  dh-autoreconf,
  dh-yang,
  libjansson-dev,
  libmnl-dev,
  libparse-syslog-perl,
  shunit2
-Standards-Version: 3.9.8
+Standards-Version: 4.7.2
+Rules-Requires-Root: no
+Vcs-Git: https://github.com/nudanos/vyatta-op.git
+Vcs-Browser: https://github.com/nudanos/vyatta-op
 
 Package: vyatta-op
 Architecture: any
-Depends:
+Depends: 
  libjansson4,
  mail-transport-agent,
  vyatta-bash,
@@ -37,7 +38,7 @@ Description: bash operational command completion
 
 Package: vyatta-op-network
 Architecture: any
-Depends:
+Depends: 
  iptraf-ng,
  iputils-ping (>= 3:20161105-1vyatta2),
  libnetaddr-ip-perl,
@@ -55,7 +56,7 @@ Description: Op mode network commands
 
 Package: vyatta-op-network-routing-instance
 Architecture: all
-Depends:
+Depends: 
  chvrf,
  libvyatta-vrfmanager-perl,
  vrf-manager (>= 2.0),
@@ -74,7 +75,7 @@ Description: Yang module for operational RPCs
 
 Package: vyatta-op-routing-instance-v1-yang
 Architecture: all
-Depends:
+Depends: 
  vyatta-op-network-routing-instance,
  ${misc:Depends},
  ${shlibs:Depends},

@@ -6,7 +6,7 @@
 export DEB_BUILD_HARDENING=1
 
 %:
-	dh $@ --with=autoreconf --with=config-package --with=yang
+	dh $@ --with autoreconf --with config-package --with yang
 
 cfg_opts := --prefix=/opt/vyatta
 cfg_opts += --sysconfdir=\$${prefix}/etc
