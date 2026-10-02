@@ -44,9 +44,9 @@ Depends:
  libnetaddr-ip-perl,
  net-tools,
  traceroute,
- vplane-config (>= 2.96),
+ vplane-config (>= 2.96) | vyatta-kernel-forwarding,
  vyatta-op,
- vyatta-ping,
+ vyatta-ping | iputils-ping,
  ${misc:Depends},
  ${shlibs:Depends}
 Replaces: vyatta-op (<< 1.0)
