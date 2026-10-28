@@ -43,55 +43,92 @@ use Data::Validate::IP qw(is_linklocal_ipv6);
 
 # Table for translating options to arguments
 my %options = (
-    'icmp-echo'        => 'I',
-    'tcp-syn'          => 'T',
-    'debug-socket'     => 'd',
-    'no-fragment'      => 'F',
-    'first-ttl'        => 'f:',
-    'gateway'          => 'g:',
-    'interface'        => 'i:',
-    'max-ttl'          => 'm:',
-    'seq-queries'      => 'N:',
-    'no-map'           => 'n',
-    'port'             => 'p:',
-    'tos'              => 't:',
-    'wait-time'        => 'w:',
-    'num-queries'      => 'q:',
-    'bypass-routing'   => 'r',
-    'source-addr'      => 's:',
-    'interval'         => 'z:',
-    'icmp-extensions'  => 'e',
-    'as-path'          => 'A',
-    'version'          => 'V',
+    'icmp-echo'       => 'I',
+    'tcp-syn'         => 'T',
+    'debug-socket'    => 'd',
+    'no-fragment'     => 'F',
+    'first-ttl'       => 'f:',
+    'gateway'         => 'g:',
+    'interface'       => 'i:',
+    'max-ttl'         => 'm:',
+    'seq-queries'     => 'N:',
+    'no-map'          => 'n',
+    'port'            => 'p:',
+    'tos'             => 't:',
+    'wait-time'       => 'w:',
+    'num-queries'     => 'q:',
+    'bypass-routing'  => 'r',
+    'source-addr'     => 's:',
+    'interval'        => 'z:',
+    'icmp-extensions' => 'e',
+    'as-path'         => 'A',
+    'version'         => 'V',
 );
 
-my $rti;
-my @new_argv;
-while (scalar @ARGV) {
-    $_ = shift @ARGV;
-    if ($_ eq "routing-instance") {
-        $rti = shift @ARGV;
-        next;
+# Splits "routing-instance NAME" out of the arguments.
+sub split_rti {
+    my (@argv) = @_;
+    my ( $rti, @rest );
+    while (@argv) {
+        my $word = shift @argv;
+        if ( $word eq "routing-instance" ) {
+            $rti = shift @argv;
+            next;
+        }
+        push @rest, $word;
     }
-    push @new_argv, $_;
+    return ( $rti, @rest );
 }
 
-@ARGV = @new_argv;
+# Asks for the outgoing interface a link-local destination needs.
+sub ask_interface {
+    print "\nSpecify outgoing interface: ";
+    ## no critic (InputOutput::ProhibitExplicitStdin) reason: an interactive prompt; <> would open the arguments as files
+    my $out_iface = <STDIN>;
+    ## use critic
+    chomp($out_iface);
+    die "traceroute: Outgoing interface not specified.\n"
+      if ( $out_iface eq "" );
+    return $out_iface;
+}
 
-exec "/usr/sbin/chvrf", $rti, "/opt/vyatta/bin/traceroute.pl", @ARGV
-  if (defined $rti);
+# The traceroute arguments for the words after the host.
+sub option_args {
+    my (@words) = @_;
+    my ( @cmdargs, $int_spcfd );
+    while ( my $arg = shift @words ) {
+        my $traceroutearg = $options{$arg};
+        die "traceroute: unknown option $arg\n"
+          unless $traceroutearg;
 
-my $cmd     = '/usr/bin/traceroute';
-my @cmdargs = ();
+        push @cmdargs, "-" . substr( $traceroutearg, 0, 1 );
+        next if rindex( $traceroutearg, ':' ) == -1;
+
+        my $optarg = shift @words;
+        die "traceroute: missing argument for $arg option\n"
+          unless defined($optarg);
+        $int_spcfd = 1 if "i:" eq $traceroutearg;
+        push @cmdargs, $optarg;
+    }
+    return ( $int_spcfd, @cmdargs );
+}
+
+my ( $rti, @args ) = split_rti(@ARGV);
+
+exec "/usr/sbin/chvrf", $rti, "/opt/vyatta/bin/traceroute.pl", @args
+  if ( defined $rti );
+
+my $cmd = '/usr/bin/traceroute';
+my @cmdargs;
 my $host;
-my $ip6_ll = 0;
 
 # First argument is host or ip version
-while (scalar @ARGV) {
-    my $first_arg = shift @ARGV;
+while (@args) {
+    my $first_arg = shift @args;
     if ( $first_arg eq 'ipv6' ) {
         push @cmdargs, '-6';
-    } elsif ( $first_arg ne 'ipv4' ) {
+    }
+    elsif ( $first_arg ne 'ipv4' ) {
         $host = $first_arg;
         last;
     }
@@ -99,52 +136,26 @@ while (scalar @ARGV) {
 
 die "traceroute: Missing host\n"
   unless defined($host);
-my $ip = new NetAddr::IP $host;
+my $ip = NetAddr::IP->new($host);
 die "traceroute: Unknown host: $host\n"
   unless defined($ip);
 
-if ( !scalar(@cmdargs) ) {
-    if ( $ip->version ) {
-        if ( $ip->version == 6 ) {
-            push @cmdargs, '-6';
-            if ( is_linklocal_ipv6($host) ) {
-                $ip6_ll = 1;
-            }
-        } elsif ( $ip->version != 4 ) {
-            die "Unknown address: $host\n";
-        }
+my $ip6_ll = 0;
+if ( !@cmdargs && $ip->version ) {
+    if ( $ip->version == 6 ) {
+        push @cmdargs, '-6';
+        $ip6_ll = is_linklocal_ipv6($host);
+    }
+    elsif ( $ip->version != 4 ) {
+        die "Unknown address: $host\n";
     }
 }
 
-my $int_spcfd;
-my $args      = [ 'traceroute', $host, @ARGV ];
-shift @$args;
-shift @$args;
-while ( my $arg = shift @$args ) {
-    my $traceroutearg = $options{$arg};
-    die "traceroute: unknown option $arg\n"
-      unless $traceroutearg;
-
-    my $flag = "-" . substr( $traceroutearg, 0, 1 );
-    push @cmdargs, $flag;
-
-    if ( rindex( $traceroutearg, ':' ) != -1 ) {
-        my $optarg = shift @$args;
-        die "traceroute: missing argument for $arg option\n"
-          unless defined($optarg);
-        if ( "i:" eq $traceroutearg ) { $int_spcfd = 1; }
-        push @cmdargs, $optarg;
-    }
-}
+my ( $int_spcfd, @optargs ) = option_args(@args);
+push @cmdargs, @optargs;
 
 if ( $ip6_ll && !$int_spcfd ) {
-    print "\nSpecify outgoing interface: ";
-    my $out_iface = <STDIN>;
-    chomp($out_iface);
-    die "traceroute: Outgoing interface not specified.\n"
-      if ( $out_iface eq "" );
-
-    push @cmdargs, "-i", $out_iface;
+    push @cmdargs, "-i", ask_interface();
 }
 
 exec $cmd, @cmdargs, $host;

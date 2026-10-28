@@ -408,7 +408,7 @@ int hash_table_remove(HashTable *hash_table, HashTableKey key)
 	return result;
 }
 
-int hash_table_num_entries(HashTable *hash_table)
+int hash_table_num_entries(const HashTable *hash_table)
 {
 	return hash_table->entries;
 }
@@ -435,7 +435,7 @@ void hash_table_iterate(HashTable *hash_table, HashTableIterator *iterator)
 	}
 }
 
-int hash_table_iter_has_more(HashTableIterator *iterator)
+int hash_table_iter_has_more(const HashTableIterator *iterator)
 {
 	return iterator->next_entry != NULL;
 }
@@ -445,7 +445,6 @@ HashTableValue hash_table_iter_next(HashTableIterator *iterator)
 	HashTableEntry *current_entry;
 	HashTable *hash_table;
 	HashTableValue result;
-	int chain;
 
 	hash_table = iterator->hash_table;
 
@@ -472,7 +471,7 @@ HashTableValue hash_table_iter_next(HashTableIterator *iterator)
 
 		/* None left in this chain, so advance to the next chain */
 
-		chain = iterator->next_chain + 1;
+		int chain = iterator->next_chain + 1;
 
 		/* Default value if no next chain found */
 

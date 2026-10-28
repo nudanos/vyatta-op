@@ -26,7 +26,7 @@ use strict;
 use warnings;
 use Getopt::Long;
 use Data::Dumper qw(Dumper);
-use JSON qw(decode_json);
+use JSON         qw(decode_json);
 
 use lib "/opt/vyatta/share/perl5/";
 use Vyatta::Dataplane;
@@ -35,23 +35,17 @@ my $TSHARK = "/usr/bin/tshark";
 my $DEBUG  = 0;
 
 sub check_if_interface_is_tsharkable {
-    my $interface = shift;
+    my ($interface) = @_;
 
-    open( my $tshark, '-|', "$TSHARK -D 2>&1" )
+    open( my $tshark, '-|', $TSHARK, '-D' )
       or die "tshark failed: $!\n";
-
-    while (<$tshark>) {
-        chomp;
-        return 1 if /^\d+\. $interface$/;
-    }
+    my @lines = <$tshark>;
     close $tshark;
+    return 1 if grep { m{^\d+[.][ ]\Q$interface\E$}x } @lines;
     die "Unable to capture traffic on $interface\n";
 }
 
-my (
-    $detail, $filter, $intf,   $unlimited, $save,
-    $files,  $size,   $swonly, $snaplen,   $bandwidth
-);
+my ( $detail, $filter, $intf, $unlimited, $save, $files, $size, $swonly, $snaplen, $bandwidth );
 my $count = 1000;
 
 #
@@ -66,23 +60,14 @@ my $count = 1000;
 # Note: tshark's default size unit is KiB
 sub parse_size {
     my ( $name, $parm ) = @_;
-    my %mult = (
-        'T' => 1073741824,
-        't' => 1073741824,
-        'G' => 1048576,
-        'g' => 1048576,
-        'M' => 1024,
-        'm' => 1024,
-        'K' => 1,
-        'k' => 1
-    );
+    my %mult = ( 'T' => 1073741824, 'G' => 1048576, 'M' => 1024, 'K' => 1 );
 
-    die "Invalid parameter: $name" if ( $name ne "size" );
-    my ( $value, $unit ) = $parm =~ m/^([0-9]+)([kKmMgGtT])?$/;
+    die "Invalid parameter: $name\n" if ( $name ne "size" );
+    my ( $value, $unit ) = $parm =~ m/^([0-9]+)([kKmMgGtT])?$/x;
     die "Invalid size. (e.g. 1 or 1K = 1KiB, 1M = 1MiB, 1G = 1Gib, 1T = 1TiB)\n"
-        unless ($value);
-    $unit = "K" unless $unit;
-    $size = $value * $mult{$unit};
+      unless ($value);
+    $size = $value * $mult{ uc( $unit // "K" ) };
+    return;
 }
 
 #
@@ -94,7 +79,7 @@ sub parse_size {
 # the main GetOptions parser.
 #
 sub generate_options {
-    my ($argv) = @_;
+    my (@argv) = @_;
 
     my %flagopt = (
         'detail'        => 1,
@@ -102,46 +87,65 @@ sub generate_options {
         'software-only' => 1,
     );
 
-    my @newargv       = ();
+    my @newargv;
     my $next_is_param = 0;
-    foreach my $arg (@$argv) {
+    foreach my $arg (@argv) {
         if ($next_is_param) {
             $next_is_param = 0;
-        } else {
-            $arg =~ s/^--//;
-            $next_is_param = 1 if !$flagopt{$arg};
-            $arg = '--' . $arg;
+            push @newargv, $arg;
+            next;
         }
-
-        push @newargv, $arg;
+        ( my $name = $arg ) =~ s/^--//x;
+        $next_is_param = 1 if !$flagopt{$name};
+        push @newargv, "--$name";
     }
-
-    return \@newargv;
+    return @newargv;
 }
 
+# The dataplane's capture session on $intf, or undef.
 sub capture_show {
-    my ($intf) = @_;
+    my ($capture_intf) = @_;
 
     my ( $dpids, $dpconns ) = Vyatta::Dataplane::setup_fabric_conns();
-    my $cmd = "capture show $intf";
+    my @dprsp = eval { vplane_exec_cmd( "capture show $capture_intf", $dpids, $dpconns, 1 ) };
+    foreach my $rsp (@dprsp) {
+        my $json = @{$rsp}[0];
+        next if !defined $json;
+        my $session = eval { decode_json($json) };
+        return $session if $session;
+    }
+    return;
+}
 
-    eval {
-        my @dprsp = vplane_exec_cmd( $cmd, $dpids, $dpconns, 1 );
-        foreach my $rsp (@dprsp) {
-            my $json = @{$rsp}[0];
-            return decode_json($json) if defined($json);
-        }
-        1;
-    };
+# Options the running session fixes: those that differ are dropped and
+# reported.
+sub drop_conflicting_options {
+    my ($capture) = @_;
+    my @ignore_options;
 
-    return undef;
+    if ( defined($snaplen) && ( $snaplen != $capture->{'snaplen'} ) ) {
+        push @ignore_options, "capture-size";
+        $snaplen = undef;
+    }
+    if ( defined($swonly) && ( $swonly != $capture->{'software-only'} ) ) {
+        push @ignore_options, "software-only";
+        $swonly = undef;
+    }
+    if ( defined($bandwidth) && ( $bandwidth != $capture->{'bandwidth'} ) ) {
+        push @ignore_options, "bandwidth";
+        $bandwidth = undef;
+    }
+    print "Interface already being monitored, ignoring options: "
+      . join( ",", @ignore_options ) . "\n"
+      if @ignore_options;
+    return;
 }
 
 #
 # main
 #
 
-my @ARGV = generate_options( \@ARGV );
+local @ARGV = generate_options(@ARGV);
 
 my $result = GetOptions(
     "detail!"        => \$detail,
@@ -174,12 +178,11 @@ if ($DEBUG) {
     print "TSHARK options:\n" . Dumper(@ARGV);
 }
 
-my @args = qw(tshark -n -i);
-push @args, $intf;
+my @args = ( 'tshark', '-n', '-i', $intf );
 
 if ( defined($save) ) {
     die "Please name your file <filename>.pcap\n"
-      unless $save =~ /.*\.pcap/;
+      unless $save =~ m{[.]pcap}x;
 
     push @args, '-w', $save;
     push @args, '-a', "filesize:$size"
@@ -187,35 +190,14 @@ if ( defined($save) ) {
 
     push @args, '-b', "files:$files"
       if defined($files);
-} else {
+}
+else {
     push @args, '-c', $count
       unless $unlimited;
 }
 
-if ( defined($existing_session) and
-     $existing_session->{'capture'}->{'active'} ) {
-    my $capture        = $existing_session->{'capture'};
-    my @ignore_options = ();
-
-    if ( defined($snaplen) && ( $snaplen != $capture->{'snaplen'} ) ) {
-        push @ignore_options, "capture-size";
-        $snaplen = undef;
-    }
-
-    if ( defined($swonly) && ( $swonly != $capture->{'software-only'} ) ) {
-        push @ignore_options, "software-only";
-        $swonly = undef;
-    }
-
-    if ( defined($bandwidth) && ( $bandwidth != $capture->{'bandwidth'} ) ) {
-        push @ignore_options, "bandwidth";
-        $bandwidth = undef;
-    }
-
-    print "Interface already being monitored, ignoring options: "
-      . join( ",", @ignore_options ) . "\n"
-      if scalar @ignore_options;
-}
+drop_conflicting_options( $existing_session->{'capture'} )
+  if $existing_session && $existing_session->{'capture'}->{'active'};
 
 push @args, '-s', $snaplen if defined($snaplen);
 push @args, '-V' if $detail;
@@ -227,8 +209,8 @@ push @args, '-f', $filter if defined($filter);
 # values through to the libpcap dataplane plugin module (and from
 # there to the dataplane itself).
 #
-$ENV{'VYATTA_MONITOR_SWONLY'}    = $swonly    if defined($swonly);
-$ENV{'VYATTA_MONITOR_BANDWIDTH'} = $bandwidth if defined($bandwidth);
+local $ENV{'VYATTA_MONITOR_SWONLY'}    = $swonly    if defined($swonly);
+local $ENV{'VYATTA_MONITOR_BANDWIDTH'} = $bandwidth if defined($bandwidth);
 
 exec {$TSHARK} @args
-  or die "Can't exec $TSHARK";
+  or die "Can't exec $TSHARK\n";

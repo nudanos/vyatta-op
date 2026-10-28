@@ -16,32 +16,31 @@ use Vyatta::Misc;
 use JSON;
 
 sub get_intf {
-    my $out     = shift;
-    my @intfs   = @_;
+    my ( $out, @intfs ) = @_;
     my @allintf = Vyatta::Misc::getInterfaces();
     foreach my $intf (@intfs) {
         die "Invalid interface: $intf\n"
           unless ( grep { $_ eq $intf } @allintf );
-        my $interface = new Vyatta::Interface($intf);
+        my $interface = Vyatta::Interface->new($intf);
         die "Invalid interface: $intf\n" unless $interface;
 
         my $admin       = $interface->up() ? 'up' : 'down';
         my $oper        = $interface->operstate();
         my $description = $interface->description();
-        my @ip_addr =
-          getIP( $intf, undef, \&Vyatta::Misc::filter_link_local_loopback );
-        my $count = 0;
+        my @ip_addr     = getIP( $intf, undef, \&Vyatta::Misc::filter_link_local_loopback );
+        my $count       = 0;
         foreach my $ip (@ip_addr) {
             $out->{address}[ $count++ ]->{ip} = $ip;
         }
         $out->{"admin-status"} = $admin;
         $out->{"oper-status"}  = $oper;
-        $out->{description} = $description if $description;
+        $out->{description}    = $description if $description;
     }
+    return;
 }
 
-my $input = join( '', <STDIN> );
-my $rpc = decode_json $input;
+my $input = do { local $/ = undef; <> };
+my $rpc   = decode_json $input;
 
 my %out;
 get_intf( \%out, $rpc->{name} );

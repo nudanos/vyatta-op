@@ -27,14 +27,14 @@ SPDX-License-Identifier: ISC
 
 /* String hash function */
 
-unsigned long string_hash(void *string)
+unsigned long string_hash(const void *string)
 {
 	/* This is the djb2 string hash function */
 
 	unsigned long result = 5381;
-	unsigned char *p;
+	const unsigned char *p;
 
-	p = (unsigned char *) string;
+	p = (const unsigned char *) string;
 
 	while (*p != '\0') {
 		result = ((result << 5) ^ result ) ^ (*p);
@@ -47,12 +47,12 @@ unsigned long string_hash(void *string)
 /* The same function, with a tolower on every character so that
  * case is ignored.  This code is duplicated for performance. */
 
-unsigned long string_nocase_hash(void *string)
+unsigned long string_nocase_hash(const void *string)
 {
 	unsigned long result = 5381;
-	unsigned char *p;
+	const unsigned char *p;
 
-	p = (unsigned char *) string;
+	p = (const unsigned char *) string;
 
 	while (*p != '\0') {
 		result = ((result << 5) ^ result ) ^ tolower(*p);
@@ -64,14 +64,14 @@ unsigned long string_nocase_hash(void *string)
 
 /* Buffer hash function */
 
-unsigned long buffer_hash(void *buf, size_t size)
+unsigned long buffer_hash(const void *buf, size_t size)
 {
 	/* This is the djb2 string hash function */
 
 	unsigned long result = 5381;
-	unsigned char *p, *e;
+	const unsigned char *p, *e;
 
-	p = (unsigned char *) buf;
+	p = (const unsigned char *) buf;
 	e = p + size;
 
 	while (p < e) {

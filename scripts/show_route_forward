@@ -17,7 +17,7 @@ function print_routes()
 {
     rd=$1
     shift
-    [[ "$@" ]] || return
+    [[ "$*" ]] || return
     [[ "$banner" ]] && echo "Kernel route table for routing-instance \"$rd\""
 
     # The kernel does not remove connected routes for interfaces when dataplane
@@ -29,12 +29,11 @@ function print_routes()
     if [ "$ip_version" == "ipv6" ]; then
         nc_intfs=$(ip link show | grep NO-CARRIER | awk -F '[:@]' '{print $2}')
         if [[ "$nc_intfs" ]]; then
-            IFS=$'\n'
-            for route in $@; do
+            while IFS= read -r route; do
                 intf=$(echo "$route" | cut -d ' ' -f3)
                 re="\b$intf\b"
-                [[ ! "$nc_intfs" =~ $re ]] && echo $route
-            done
+                [[ ! "$nc_intfs" =~ $re ]] && echo "$route"
+            done <<< "$*"
         else
             echo "$@"
         fi
@@ -53,7 +52,7 @@ function find_vrf_routes()
     local="/^\(anycast\|broadcast\|local\|::1 dev vrf\|127\.0\.0\.0\/8 dev vrf\)/d"
     unreach="/unreachable default.*metric 4278198272/d"
     for rd in "$@"; do
-        table=$(/opt/vyatta/sbin/getvrftable --pbr-table $rd 254 2> /dev/null)
+        table=$(/opt/vyatta/sbin/getvrftable --pbr-table "$rd" 254 2> /dev/null)
         routes=$(eval "/usr/sbin/chvrf $rd ip $ARGS route list table $table $r" | sed -e "$rdid" -e "$local" -e "$unreach")
         print_routes "$rd" "${routes[@]}"
     done

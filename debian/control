@@ -9,8 +9,11 @@ Build-Depends: debhelper-compat (= 13),
  cpio,
  dh-autoreconf,
  dh-yang,
+ libdata-validate-ip-perl,
  libjansson-dev,
+ libjson-perl,
  libmnl-dev,
+ libnetaddr-ip-perl,
  libparse-syslog-perl,
  shunit2
 Standards-Version: 4.7.2

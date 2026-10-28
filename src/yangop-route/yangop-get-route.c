@@ -49,8 +49,9 @@ static inline void Perror(const char *s)
 
 static void Pdebug(const char *fmt, ...)
 {
-	va_list args;
 	if (debug) {
+		va_list args;
+
 		va_start(args, fmt);
 		vfprintf(stderr, fmt, args);
 		va_end(args);
@@ -64,17 +65,19 @@ static void *addr_copy(void *dest, const void *src, int family)
 	if (family == AF_INET) {
 		size_t unused = sizeof(struct in6_addr) - sizeof(struct in_addr);
 		size = sizeof(struct in_addr);
-		memset(dest + size, 0, unused);
+		memset((char *)dest + size, 0, unused);
 	} else
 		size = sizeof(struct in6_addr);
 	return memcpy(dest, src, size);
 }
 
+// cppcheck-suppress constParameterCallback ; reason: the hash table's HashTableHashFunc type fixes the signature
 static unsigned long addr_hash(void *addr)
 {
 	return buffer_hash(addr, sizeof(struct in6_addr));
 }
 
+// cppcheck-suppress constParameterCallback ; reason: the hash table's HashTableEqualFunc type fixes the signature
 static int addr_equal(void *addr1, void *addr2)
 {
 	return memcmp(addr1, addr2, sizeof(struct in6_addr)) == 0;
@@ -159,7 +162,7 @@ static char *if_addrtoname(int family, void *addr)
 	for (iap = addrs; iap != NULL; iap = iap->ifa_next) {
 		if (iap->ifa_addr && iap->ifa_addr->sa_family == family) {
 			struct in6_addr if_addr;
-			void *ifaddr;
+			const void *ifaddr;
 			if (family == AF_INET)
 				ifaddr = &((struct sockaddr_in *)iap->ifa_addr)->sin_addr;
 			else
@@ -285,7 +288,7 @@ static void set_path_idx(struct path *p, int family, const struct rtmsg *rm, str
 
 static struct route *process_route(const struct rtmsg *rm, struct nlattr *tb[])
 {
-	void *addr;
+	const void *addr;
 	struct path *p;
 	struct route *r = route_create();
 
@@ -361,7 +364,7 @@ error:
 static int process_rtnl(const struct nlmsghdr *nlh, void *arg)
 {
 	struct route *r;
-	struct destroute *rt = arg;
+	const struct destroute *rt = arg;
 	struct nlattr *tb[RTA_MAX + 1] = { NULL };
 	struct rtmsg *rm = mnl_nlmsg_get_payload(nlh);
 

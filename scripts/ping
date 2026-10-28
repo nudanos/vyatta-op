@@ -43,132 +43,123 @@ use feature ":5.10";
 
 # Table for translating options to arguments
 my %options = (
-    'audible'          => 'a',
-    'adaptive'         => 'A',
-    'allow-broadcast'  => 'b',
-    'bypass-route'     => 'r',
-    'count'            => 'c:',
-    'deadline'         => 'w:',
-    'ether-size'       => 'e:',
-    'flood'            => 'f',
-    'interface'        => 'I:',
-    'interval'         => 'i:',
-    'mark'             => 'm:',
-    'mtu-discovery'    => 'M:',
-    'numeric'          => 'n',
-    'no-loopback'      => 'L',
-    'pattern'          => 'p:',
-    'timestamp'        => 'D',
-    'tos'              => 'Q:',
-    'quiet'            => 'q',
-    'record-route'     => 'R',
-    'size'             => 's:',
-    'ttl'              => 't:',
-    'verbose'          => 'v',
+    'audible'         => 'a',
+    'adaptive'        => 'A',
+    'allow-broadcast' => 'b',
+    'bypass-route'    => 'r',
+    'count'           => 'c:',
+    'deadline'        => 'w:',
+    'ether-size'      => 'e:',
+    'flood'           => 'f',
+    'interface'       => 'I:',
+    'interval'        => 'i:',
+    'mark'            => 'm:',
+    'mtu-discovery'   => 'M:',
+    'numeric'         => 'n',
+    'no-loopback'     => 'L',
+    'pattern'         => 'p:',
+    'timestamp'       => 'D',
+    'tos'             => 'Q:',
+    'quiet'           => 'q',
+    'record-route'    => 'R',
+    'size'            => 's:',
+    'ttl'             => 't:',
+    'verbose'         => 'v',
 );
 
-my $rti;
-my @new_argv;
-while (scalar @ARGV) {
-    $_ = shift @ARGV;
-    if ($_ eq "routing-instance") {
-        $rti = shift @ARGV;
-        next;
+# Splits "routing-instance NAME" out of the arguments.
+sub split_rti {
+    my (@argv) = @_;
+    my ( $rti, @rest );
+    while (@argv) {
+        my $word = shift @argv;
+        if ( $word eq "routing-instance" ) {
+            $rti = shift @argv;
+            next;
+        }
+        push @rest, $word;
     }
-    push @new_argv, $_;
+    return ( $rti, @rest );
 }
 
-@ARGV = @new_argv;
+# Asks for the outgoing interface a link-local destination needs.
+sub ask_interface {
+    print "\nSpecify outgoing interface: ";
+    ## no critic (InputOutput::ProhibitExplicitStdin) reason: an interactive prompt; <> would open the arguments as files
+    my $out_iface = <STDIN>;
+    ## use critic
+    chomp($out_iface);
+    die "ping: Outgoing interface not specified.\n"
+      if ( $out_iface eq "" );
+    return $out_iface;
+}
 
-exec "/usr/sbin/chvrf", $rti, "/opt/vyatta/bin/ping", @ARGV
-  if (defined $rti);
+# One option's ping arguments; $state collects size/ether-size/interface.
+sub option_args {
+    my ( $pingarg, $optarg, $ip_hlen, $state ) = @_;
+    my $flag = "-" . substr( $pingarg, 0, 1 );
+    return ($flag) if !defined $optarg;
+
+    if ( "s:" eq $pingarg ) { $state->{size} = 1; }
+    if ( "e:" eq $pingarg ) {
+        $state->{ether_size} = 1;
+        return ( "-s", $optarg - $ip_hlen - $state->{icmp_hlen} );
+    }
+    if ( "I:" eq $pingarg ) {
+        $state->{int_spcfd} = 1;
+        return ( "-Z", $optarg ) if $optarg =~ m{^lo[0-9]}x;
+    }
+    if ( "Q:" eq $pingarg ) {
+        die "tos value $optarg is not a valid decimal or hex number\n"
+          unless ( $optarg =~ m{^0?[xX]?[\dA-Fa-f]+$}x );
+        $optarg = sprintf( "0x%x", $optarg )
+          if ( $optarg =~ m{^\d+$}x );
+    }
+    return ( $flag, $optarg );
+}
+
+my ( $rti, @args ) = split_rti(@ARGV);
+
+exec "/usr/sbin/chvrf", $rti, "/opt/vyatta/bin/ping", @args
+  if ( defined $rti );
 
 # First argument is host
-my $host = shift @ARGV;
+my $host = shift @args;
 die "ping: Missing host\n"
   unless defined($host);
-my $ip = new NetAddr::IP $host;
+my $ip = NetAddr::IP->new($host);
 die "ping: Unknown host: $host\n"
   unless defined($ip);
 
-my $cmd;
-my $ip_hlen;
-my $icmp_hlen = 8;
-my $ip6_ll    = 0;
-if ( $ip->version == 6 ) {
-    $cmd     = '/bin/ping6';
-    $ip_hlen = 40;
+my $v6      = $ip->version == 6;
+my $cmd     = $v6 ? '/bin/ping6' : '/bin/ping';
+my $ip_hlen = $v6 ? 40           : 20;
+my $ip6_ll  = $v6 && is_linklocal_ipv6($host);
 
-    if ( is_linklocal_ipv6($host) ) {
-        $ip6_ll = 1;
-    }
-
-} else {
-    $cmd     = '/bin/ping';
-    $ip_hlen = 20;
-}
-
-my $size;
-my $ether_size;
-my $int_spcfd;
-my @cmdargs   = ();
-my $args      = [ 'ping', $host, @ARGV ];
-shift @$args;
-shift @$args;
-
-while ( my $arg = shift @$args ) {
+my %state = ( icmp_hlen => 8 );
+my @cmdargs;
+while ( my $arg = shift @args ) {
     my $pingarg = $options{$arg};
     die "ping: unknown option $arg\n"
       unless $pingarg;
 
-    my $flag = "-" . substr( $pingarg, 0, 1 );
-    push @cmdargs, $flag;
-
+    my $optarg;
     if ( rindex( $pingarg, ':' ) != -1 ) {
-        my $optarg = shift @$args;
+        $optarg = shift @args;
         die "ping: missing argument for $arg option\n"
           unless defined($optarg);
-        if ( "s:" eq $pingarg ) { $size = 1; }
-        if ( "e:" eq $pingarg ) {
-            $ether_size = 1;
-            pop @cmdargs;
-            push @cmdargs, "-s";
-            $optarg = $optarg - $ip_hlen - $icmp_hlen;
-        }
-        if ( "I:" eq $pingarg ) {
-            if ( $optarg =~ /^lo[0-9]/ ) {
-                pop @cmdargs;
-                push @cmdargs, "-Z";
-            }
-            $int_spcfd = 1;
-        }
-        if ( "Q:" eq $pingarg ) {
-            die "tos value $optarg is not a valid decimal or hex number\n"
-              unless ( $optarg =~ /^0?[xX]?[\dA-Fa-f]+$/);
-            $optarg = sprintf( "0x%x", $optarg )
-              if ( $optarg =~ /^\d+$/ );
-        }
-        push @cmdargs, $optarg;
     }
+    push @cmdargs, option_args( $pingarg, $optarg, $ip_hlen, \%state );
 }
 
-if ( $ip6_ll && !$int_spcfd ) {
-    print "\nSpecify outgoing interface: ";
-    my $out_iface = <STDIN>;
-    chomp($out_iface);
-    die "ping: Outgoing interface not specified.\n"
-      if ( $out_iface eq "" );
-
-    if ( $out_iface =~ /^lo[0-9]/ ) {
-        push @cmdargs, "-Z", $out_iface;
-    } else {
-        push @cmdargs, "-I", $out_iface;
-    }
+if ( $ip6_ll && !$state{int_spcfd} ) {
+    my $out_iface = ask_interface();
+    push @cmdargs, ( $out_iface =~ m{^lo[0-9]}x ? "-Z" : "-I" ), $out_iface;
 }
 
 # The 'ether-size' option is only provided to match overall packet data size
 # as in IOS and hence you cannot use with 'size'
 die "ping: options 'size' and 'ether-size' cannot be specified together\n"
-  if ( defined($size) && defined($ether_size) );
+  if ( $state{size} && $state{ether_size} );
 
 exec $cmd, @cmdargs, $host;

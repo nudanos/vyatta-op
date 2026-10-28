@@ -79,7 +79,7 @@ static json_t *path_json(const struct path *p, unsigned int entry)
 	if (p->flags & PATHF_IFIDX) {
 		char name[IFNAMSIZ];
 		if (if_indextoname(p->ifidx, name) == NULL)
-			snprintf(name, sizeof(name), "if%d", p->ifidx);
+			snprintf(name, sizeof(name), "if%u", p->ifidx);
 		json_t *jdevice = json_string(name);
 		json_object_set_new(jpath, "device", jdevice);
 	}
@@ -120,7 +120,7 @@ void route_destroy(void *b)
 json_t *route_json(const struct route *r, const char *ns __attribute__((unused)))
 {
 	struct list *item;
-	struct path *p;
+	const struct path *p;
 	unsigned int entry = 1;
 
 	json_t *jroute = json_object();

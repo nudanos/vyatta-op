@@ -10,17 +10,15 @@ use strict;
 use warnings;
 use JSON;
 
-my $input = join( '', <STDIN> );
-my $rpc = decode_json $input;
+my $input = do { local $/ = undef; <> };
+my $rpc   = decode_json $input;
 
-my $cmd = "/opt/vyatta/bin/yangop-get-route";
+my @cmd = ("/opt/vyatta/bin/yangop-get-route");
 
-my $family = "ipv4";
-$family = $rpc->{family}
-  if $rpc->{family};
-$cmd .= " -6" if $family eq "ipv6";
+my $family = $rpc->{family} || "ipv4";
+push @cmd, "-6" if $family eq "ipv6";
 
 my $dest = $rpc->{destination};
-$cmd .= " -r $dest" if $dest;
+push @cmd, "-r", $dest if $dest;
 
-exec $cmd;
+exec { $cmd[0] } @cmd or die "Cannot run $cmd[0]: $!\n";

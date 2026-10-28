@@ -31,7 +31,7 @@ static inline int list_empty(const struct list *l)
 	return l->next == l;
 }
 
-static inline int list_last(struct list *e, const struct list *l)
+static inline int list_last(const struct list *e, const struct list *l)
 {
         return e->next == l;
 }

@@ -1,12 +1,14 @@
 #!/bin/bash
 # Implementation of the "show monitoring" operational command
 
+bindir=${vyatta_bindir:-/opt/vyatta/bin}
+
 echo "------------------------------"
 echo "  Dataplane monitoring status"
 echo "------------------------------"
-${vyatta_bindir}/opc show monitoring dataplane
+"$bindir"/opc show monitoring dataplane
 
 echo "------------------------------"
 echo "  Protocol monitoring status"
 echo "------------------------------"
-${vyatta_bindir}/opc show monitoring protocols
+"$bindir"/opc show monitoring protocols

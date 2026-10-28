@@ -212,7 +212,7 @@ int hash_table_remove(HashTable *hash_table, HashTableKey key);
  * @return                    The number of entries in the hash table.
  */
 
-int hash_table_num_entries(HashTable *hash_table);
+int hash_table_num_entries(const HashTable *hash_table);
 
 /**
  * Initialise a @ref HashTableIterator to iterate over a hash table.
@@ -234,7 +234,7 @@ void hash_table_iterate(HashTable *hash_table, HashTableIterator *iter);
  *                            iterate over.
  */
 
-int hash_table_iter_has_more(HashTableIterator *iterator);
+int hash_table_iter_has_more(const HashTableIterator *iterator);
 
 /**
  * Using a hash table iterator, retrieve the next key.
